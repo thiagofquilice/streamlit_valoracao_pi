@@ -334,23 +334,17 @@ elif step == 4:
     st.write(P.premissas.descricao)
 
     st.markdown("#### Blocos Qualitativos")
-    st.markdown("**Sumário Executivo**
 
-" + (P.qualitativo.sumario_executivo or "—"))
-    st.markdown("**Descrição da Tecnologia**
+    def _render_section(label: str, content: Optional[str], show_when_empty: bool = True) -> None:
+        texto = (content or "").strip()
+        if texto or show_when_empty:
+            st.markdown(f"**{label}**\n\n{texto if texto else '—'}")
 
-" + (P.qualitativo.descricao_tecnologia or "—"))
-    st.markdown("**Análise de Mercado**
-
-" + (P.qualitativo.analise_mercado or "—"))
-    if P.qualitativo.analise_competitiva:
-        st.markdown("**Análise Competitiva**
-
-" + P.qualitativo.analise_competitiva)
-    if P.qualitativo.analise_riscos:
-        st.markdown("**Análise de Riscos**
-
-" + P.qualitativo.analise_riscos)
+    _render_section("Sumário Executivo", P.qualitativo.sumario_executivo)
+    _render_section("Descrição da Tecnologia", P.qualitativo.descricao_tecnologia)
+    _render_section("Análise de Mercado", P.qualitativo.analise_mercado)
+    _render_section("Análise Competitiva", P.qualitativo.analise_competitiva, show_when_empty=False)
+    _render_section("Análise de Riscos", P.qualitativo.analise_riscos, show_when_empty=False)
 
     st.markdown("#### Premissas principais")
     prem_df = pd.DataFrame([
