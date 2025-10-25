@@ -21,6 +21,10 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+
+PRIMARY_COLOR = "#16a34a"
+PRIMARY_COLOR_DARK = "#15803d"
+
 # =============================================================
 # Utilidades numéricas
 # =============================================================
@@ -189,17 +193,58 @@ def calcular_custos(p: Premissas) -> ResultadoMetodo:
 
 st.set_page_config(page_title="Valoração de Patentes — MVP", layout="wide")
 
+st.markdown(
+    f"""
+    <style>
+    .stButton > button,
+    .stDownloadButton > button {{
+        background-color: {PRIMARY_COLOR} !important;
+        border-color: {PRIMARY_COLOR} !important;
+        color: white !important;
+    }}
+    .stButton > button:hover,
+    .stDownloadButton > button:hover {{
+        background-color: {PRIMARY_COLOR_DARK} !important;
+        border-color: {PRIMARY_COLOR_DARK} !important;
+        color: white !important;
+    }}
+    .stButton > button:focus:not(:active),
+    .stDownloadButton > button:focus:not(:active) {{
+        box-shadow: 0 0 0 0.2rem rgba(22, 163, 74, 0.35) !important;
+        color: white !important;
+    }}
+    .stProgress > div > div > div > div {{
+        background-color: {PRIMARY_COLOR} !important;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.title("💡 Valoração de Patentes — MVP (Wizard)")
 
 if "step" not in st.session_state:
     st.session_state.step = 1
 
-step = st.session_state.step
-
 with st.sidebar:
+    current_step = st.session_state.step
     st.header("Navegação")
     st.write("Passos: 1️⃣ Textos • 2️⃣ Premissas • 3️⃣ Cálculo • 4️⃣ Relatório")
-    st.progress((step - 1) / 3)
+    progress_placeholder = st.empty()
+    st.markdown("### Ir diretamente para")
+    steps_labels = [
+        (1, "Passo 1 — Textos"),
+        (2, "Passo 2 — Premissas"),
+        (3, "Passo 3 — Cálculo"),
+        (4, "Passo 4 — Relatório"),
+    ]
+    for idx, label in steps_labels:
+        if st.button(label, key=f"sidebar_step_{idx}"):
+            st.session_state.step = idx
+            current_step = idx
+    progress_placeholder.progress((current_step - 1) / 3)
+
+step = st.session_state.step
 
 # -----------------------------
 # Passo 1 — Informações Textuais
