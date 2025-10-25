@@ -10,3 +10,11 @@ pip install streamlit pandas numpy xlsxwriter
 
 # 4) Run your app
 streamlit run app.py
+
+
+
+
+git pull            # atualiza local
+git add .
+git commit -m "sua mensagem"
+git push
