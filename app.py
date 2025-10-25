@@ -310,8 +310,10 @@ elif step == 3:
             st.dataframe(df_comp, use_container_width=True)
         with colB:
             if not df_comp["Valor"].isna().all():
-                st.metric("Mediana", money(float(np.nanmedian(df_comp["Valor"].values))))
-                st.metric("Média", money(float(np.nanmean(df_comp["Valor"].values))))
+                # Ensure values are a numpy ndarray of float for type-checkers and numpy functions
+                vals = pd.to_numeric(df_comp["Valor"], errors="coerce").to_numpy(dtype=float)
+                st.metric("Mediana", money(float(np.nanmedian(vals))))
+                st.metric("Média", money(float(np.nanmean(vals))))
 
         st.bar_chart(df_comp.set_index("Método"))
 
