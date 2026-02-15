@@ -29,7 +29,7 @@ PRIMARY_COLOR_DARK = "#15803d"
 # Utilidades numéricas
 # =============================================================
 
-def money(x: float | int | None, precision: int = 2) -> str:
+def money(x: Optional[float], precision: int = 2) -> str:
     if x is None or (isinstance(x, float) and (np.isnan(x) or np.isinf(x))):
         return "—"
     return f"R$ {x:,.{precision}f}".replace(",", "_").replace(".", ",").replace("_", ".")
