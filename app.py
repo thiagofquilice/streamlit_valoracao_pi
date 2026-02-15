@@ -459,7 +459,7 @@ elif step == 2:
             "Taxa de Desconto (% a.a.)",
             0.01,
             100.0,
-            P.premissas.taxa_desconto * 100,
+            max(0.01, float(P.premissas.taxa_desconto) * 100),
             step=0.5,
             format="%.2f",
             help="Taxa usada para trazer os fluxos de royalties a valor presente.",
