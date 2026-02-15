@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Streamlit • MVP de Valoração de Patentes (Wizard 4 passos, 1 projeto)
+Streamlit • MVP de Valoração de Patentes (4 passos, 1 projeto)
 --------------------------------------------------------------------
 - Single-file app:  streamlit run app.py
 - Dependências mínimas:  streamlit, pandas, numpy, xlsxwriter (para Excel)
@@ -9,7 +9,7 @@ Streamlit • MVP de Valoração de Patentes (Wizard 4 passos, 1 projeto)
 ATENÇÃO (MVP):
 - Sem "Projetos[]" nem "Status" (Rascunho/Concluído) — removidos conforme pedido.
 - Sem "Faixa recomendada (85%/115%)" — removida do escopo.
-- Inclui: Wizard 4 passos, blocos qualitativos, premissas quantitativas, DCF (3 cenários), Abordagem de Custos (soma simples), validações, tabela e gráfico comparativo, exportações JSON/CSV/Excel.
+- Inclui: 4 passos, blocos qualitativos, premissas quantitativas, DCF (3 cenários), Abordagem de Custos (soma simples), validações, tabela e gráfico comparativo, exportações JSON/CSV/Excel.
 """
 
 from __future__ import annotations
@@ -63,28 +63,28 @@ class Qualitativo:
 
 @dataclass
 class Premissas:
-    nome_projeto: str = "Avaliação #1"
+    nome_projeto: str = ""
     descricao: str = ""
     # Dados Financeiros
-    volume_negocios_anual: float = 1_000_000.0
-    custos_variaveis_percentual: float = 0.30
-    custos_fixos: float = 300_000.0
-    taxa_royalties: float = 0.05           # 0..0.20
+    volume_negocios_anual: float = 0.0
+    custos_variaveis_percentual: float = 0.0
+    custos_fixos: float = 0.0
+    taxa_royalties: float = 0.0           # 0..0.20
     investimento_inicial: float = 0.0
     composicao_investimento: List[Dict[str, Any]] = field(default_factory=list)
     # Dados de Mercado
-    taxa_crescimento: float = 0.05         # 5% a.a.
-    variacao_receita_otimista: float = 0.20
-    variacao_receita_pessimista: float = 0.20
-    taxa_desconto: float = 0.12            # 12% a.a.
+    taxa_crescimento: float = 0.0
+    variacao_receita_otimista: float = 0.0
+    variacao_receita_pessimista: float = 0.0
+    taxa_desconto: float = 0.0
     # Horizontes
-    horizonte_proj_anos: int = 10          # 5..20
+    horizonte_proj_anos: int = 1
     # Custos de Desenvolvimento (abordagem de custos)
-    custos_pd: float = 300_000.0
-    custos_formulacao: float = 120_000.0
-    custos_testes: float = 150_000.0
-    custos_prototipo: float = 200_000.0
-    custos_validacao: float = 80_000.0
+    custos_pd: float = 0.0
+    custos_formulacao: float = 0.0
+    custos_testes: float = 0.0
+    custos_prototipo: float = 0.0
+    custos_validacao: float = 0.0
 
 
 @dataclass
@@ -221,7 +221,7 @@ def calcular_custos(p: Premissas) -> ResultadoMetodo:
 
 
 # =============================================================
-# UI — Wizard 4 passos
+# UI — 4 passos
 # =============================================================
 
 st.set_page_config(page_title="Valoração de Patentes — MVP", layout="wide")
@@ -254,7 +254,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("💡 Valoração de Patentes — MVP (Wizard)")
+st.title("Valoração de Patentes — MVP")
 
 if "step" not in st.session_state:
     st.session_state.step = 1
@@ -308,6 +308,7 @@ if step == 1:
     col1, col2 = st.columns([1,1])
     if col1.button("➡️ Avançar para Premissas", type="primary"):
         st.session_state.step = 2
+        st.rerun()
     col2.download_button("⬇️ Exportar projeto (.json)", data=P.to_json(), file_name=f"{P.premissas.nome_projeto.replace(' ', '_')}.patval.json", mime="application/json")
 
 # -----------------------------
@@ -319,7 +320,7 @@ elif step == 2:
     if "show_comp_investimento" not in st.session_state:
         st.session_state.show_comp_investimento = False
     if "composicao_investimento_data" not in st.session_state:
-        base = P.premissas.composicao_investimento or [{"Item": "", "Quantidade": 1.0, "Valor Unitário": 0.0, "Valor Total": 0.0}]
+        base = P.premissas.composicao_investimento or [{"Item": "", "Quantidade": 0.0, "Valor Unitário": 0.0, "Valor Total": 0.0}]
         st.session_state.composicao_investimento_data = pd.DataFrame(base)
 
     with st.expander("Dados Financeiros", expanded=True):
@@ -378,6 +379,13 @@ elif step == 2:
             format="%.2f",
             disabled=st.session_state.show_comp_investimento,
             help="Valor aplicado no início da exploração comercial da patente.",
+        )
+
+        st.caption(
+            "Valores formatados: "
+            f"Volume de Negócios {money(P.premissas.volume_negocios_anual)} • "
+            f"Custos Fixos {money(P.premissas.custos_fixos)} • "
+            f"Investimento Inicial {money(P.premissas.investimento_inicial)}"
         )
 
         st.session_state.show_comp_investimento = st.checkbox(
@@ -457,7 +465,7 @@ elif step == 2:
             help="Taxa usada para trazer os fluxos de royalties a valor presente.",
         ) / 100
 
-    with st.expander("Custos de Desenvolvimento (Abordagem de Custos)", expanded=True):
+    with st.expander("Abordagem de custo de desenvolvimento", expanded=True):
         c1, c2, c3, c4, c5 = st.columns(5)
         P.premissas.custos_pd = c1.number_input("P&D (R$)", 0.0, 1e12, P.premissas.custos_pd, step=10_000.0, format="%.2f")
         P.premissas.custos_formulacao = c2.number_input("Formulação (R$)", 0.0, 1e12, P.premissas.custos_formulacao, step=5_000.0, format="%.2f")
@@ -468,6 +476,7 @@ elif step == 2:
     col1, col2 = st.columns([1,1])
     if col1.button("⬅️ Voltar para Textos"):
         st.session_state.step = 1
+        st.rerun()
     if col2.button("➡️ Avançar para Cálculo", type="primary"):
         erros = validar_premissas(P.premissas)
         if erros:
@@ -475,6 +484,7 @@ elif step == 2:
                 st.error(e)
         else:
             st.session_state.step = 3
+            st.rerun()
 
 # -----------------------------
 # Passo 3 — Cálculos Automáticos
@@ -508,20 +518,12 @@ elif step == 3:
             "DCF (Provável)": P.resultados.dcf_prob.valor,
             "DCF (Otimista)": P.resultados.dcf_otim.valor,
             "DCF (Pessimista)": P.resultados.dcf_pess.valor,
-            "Custos (soma)": P.resultados.custos.valor,
+            "Abordagem de custo de desenvolvimento": P.resultados.custos.valor,
         }
         df_comp = pd.DataFrame({"Método": list(valores.keys()), "Valor": list(valores.values())})
         df_comp_fmt = formatar_df_monetario(df_comp, ["Valor"])
 
-        colA, colB = st.columns([2,1])
-        with colA:
-            st.dataframe(df_comp_fmt, use_container_width=True, hide_index=True)
-        with colB:
-            if not df_comp["Valor"].isna().all():
-                # Ensure values are a numpy ndarray of float for type-checkers and numpy functions
-                vals = pd.to_numeric(df_comp["Valor"], errors="coerce").to_numpy(dtype=float)
-                st.metric("Mediana", money(float(np.nanmedian(vals))))
-                st.metric("Média", money(float(np.nanmean(vals))))
+        st.dataframe(df_comp_fmt, use_container_width=True, hide_index=True)
 
         st.bar_chart(df_comp.set_index("Método"))
 
@@ -548,8 +550,10 @@ elif step == 3:
     col1, col2 = st.columns([1,1])
     if col1.button("⬅️ Voltar para Premissas"):
         st.session_state.step = 2
+        st.rerun()
     if col2.button("➡️ Avançar para Relatório", type="primary"):
         st.session_state.step = 4
+        st.rerun()
 
 # -----------------------------
 # Passo 4 — Relatório Final (visualização + exportações)
@@ -585,7 +589,7 @@ elif step == 4:
         ["Ajuste pessimista de receita", f"-{P.premissas.variacao_receita_pessimista*100:.2f}%"],
         ["Taxa de Desconto (r)", f"{P.premissas.taxa_desconto*100:.2f}%"],
         ["Horizonte (anos)", P.premissas.horizonte_proj_anos],
-        ["Custos de Desenvolvimento (soma)", money(P.premissas.custos_pd + P.premissas.custos_formulacao + P.premissas.custos_testes + P.premissas.custos_prototipo + P.premissas.custos_validacao)],
+        ["Abordagem de custo de desenvolvimento", money(P.premissas.custos_pd + P.premissas.custos_formulacao + P.premissas.custos_testes + P.premissas.custos_prototipo + P.premissas.custos_validacao)],
     ], columns=["Item", "Valor"])
     st.table(prem_df)
 
@@ -594,7 +598,7 @@ elif step == 4:
         "DCF (Provável)": P.resultados.dcf_prob.valor,
         "DCF (Otimista)": P.resultados.dcf_otim.valor,
         "DCF (Pessimista)": P.resultados.dcf_pess.valor,
-        "Custos (soma)": P.resultados.custos.valor,
+        "Abordagem de custo de desenvolvimento": P.resultados.custos.valor,
     }
     df_comp = pd.DataFrame({"Método": list(valores.keys()), "Valor": list(valores.values())})
     st.dataframe(formatar_df_monetario(df_comp, ["Valor"]), use_container_width=True, hide_index=True)
