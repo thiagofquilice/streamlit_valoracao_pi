@@ -154,6 +154,10 @@ def validar_premissas(p: Premissas) -> List[str]:
 def projetar_fluxo_caixa(p: Premissas, g: float, ajuste_receita: float = 0.0) -> pd.DataFrame:
     receita0_ajustada = p.volume_negocios_anual * (1 + ajuste_receita)
     linhas: List[Dict[str, float | int]] = []
+def _fluxos_fcff(p: Premissas, g: float, ajuste_receita: float = 0.0) -> List[float]:
+    receita0 = p.volume_negocios_anual
+    receita0_ajustada = receita0 * (1 + ajuste_receita)
+    fluxos = []
     for t in range(1, p.horizonte_proj_anos + 1):
         receita_t = receita0_ajustada * ((1 + g) ** t)
         custos_variaveis_t = receita_t * p.custos_variaveis_percentual
@@ -194,6 +198,16 @@ def calcular_dcf_cenario(p: Premissas, g: float, nome: str, ajuste_receita: floa
             "fluxos": fluxos,
             "projecao_caixa": projecao.to_dict(orient="records"),
         },
+        fluxos.append(float(royalties_t))
+    return fluxos
+
+
+def calcular_dcf_cenario(p: Premissas, g: float, nome: str, ajuste_receita: float = 0.0) -> ResultadoMetodo:
+    fluxos = _fluxos_fcff(p, g, ajuste_receita)
+    valor = npv(fluxos, p.taxa_desconto)
+    return ResultadoMetodo(
+        valor=float(valor),
+        detalhes={"cenario": nome, "g": g, "ajuste_receita": ajuste_receita, "fluxos": fluxos},
     )
 
 
