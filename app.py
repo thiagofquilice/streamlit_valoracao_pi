@@ -62,6 +62,8 @@ class Premissas:
     custos_variaveis_percentual: float = 0.30
     custos_fixos: float = 300_000.0
     taxa_royalties: float = 0.05           # 0..0.20
+    investimento_inicial: float = 0.0
+    composicao_investimento: List[Dict[str, Any]] = field(default_factory=list)
     # Dados de Mercado
     taxa_crescimento: float = 0.05         # 5% a.a.
     variacao_receita_otimista: float = 0.20
@@ -134,6 +136,8 @@ def validar_premissas(p: Premissas) -> List[str]:
         errs.append("Custos e Despesas Variáveis devem estar entre 0% e 100% da receita.")
     if p.custos_fixos < 0:
         errs.append("Custos e Despesas Fixos não podem ser negativos.")
+    if p.investimento_inicial < 0:
+        errs.append("Investimento inicial não pode ser negativo.")
     if not (0.0 <= p.taxa_royalties <= 0.20):
         errs.append("Taxa de Royalties deve estar entre 0% e 20%.")
     if p.variacao_receita_otimista < 0:
@@ -302,6 +306,9 @@ if step == 1:
 elif step == 2:
     st.subheader("Passo 2 — Premissas Quantitativas")
 
+    if "show_comp_investimento" not in st.session_state:
+        st.session_state.show_comp_investimento = False
+
     with st.expander("Dados Financeiros", expanded=True):
         c1, c2, c3 = st.columns(3)
         P.premissas.volume_negocios_anual = c1.number_input(
@@ -345,6 +352,57 @@ elif step == 2:
             P.premissas.horizonte_proj_anos,
             help="Defina com base na vida estimada de exploração comercial da patente.",
         ))
+
+        P.premissas.investimento_inicial = st.number_input(
+            "Investimento inicial para exploração da patente (R$)",
+            min_value=0.0,
+            max_value=1e12,
+            value=float(P.premissas.investimento_inicial),
+            step=10_000.0,
+            disabled=st.session_state.show_comp_investimento,
+            help="Valor aplicado no início da exploração comercial da patente.",
+        )
+
+        toggle_label = (
+            "🔼 Ocultar composição opcional do investimento inicial"
+            if st.session_state.show_comp_investimento
+            else "🔽 Detalhar composição opcional do investimento inicial"
+        )
+        if st.button(toggle_label, key="toggle_comp_investimento"):
+            st.session_state.show_comp_investimento = not st.session_state.show_comp_investimento
+
+        if st.session_state.show_comp_investimento:
+            composicao_base = P.premissas.composicao_investimento or [
+                {"Item": "", "Quantidade": 1.0, "Valor Unitário": 0.0, "Valor Total": 0.0}
+            ]
+            comp_df = pd.DataFrame(composicao_base)
+            for col in ["Item", "Quantidade", "Valor Unitário", "Valor Total"]:
+                if col not in comp_df.columns:
+                    comp_df[col] = "" if col == "Item" else 0.0
+            comp_df = comp_df[["Item", "Quantidade", "Valor Unitário", "Valor Total"]]
+
+            comp_edit = st.data_editor(
+                comp_df,
+                key="composicao_investimento_editor",
+                num_rows="dynamic",
+                use_container_width=True,
+                column_config={
+                    "Item": st.column_config.TextColumn("Item"),
+                    "Quantidade": st.column_config.NumberColumn("Quantidade", min_value=0.0, step=1.0),
+                    "Valor Unitário": st.column_config.NumberColumn("Valor Unitário", min_value=0.0, step=100.0, format="R$ %.2f"),
+                    "Valor Total": st.column_config.NumberColumn("Valor Total", disabled=True, format="R$ %.2f"),
+                },
+            )
+
+            comp_calc = comp_edit.copy()
+            comp_calc["Quantidade"] = pd.to_numeric(comp_calc["Quantidade"], errors="coerce").fillna(0.0)
+            comp_calc["Valor Unitário"] = pd.to_numeric(comp_calc["Valor Unitário"], errors="coerce").fillna(0.0)
+            comp_calc["Valor Total"] = comp_calc["Quantidade"] * comp_calc["Valor Unitário"]
+            total_investimento = float(comp_calc["Valor Total"].sum())
+            P.premissas.composicao_investimento = comp_calc.to_dict(orient="records")
+            P.premissas.investimento_inicial = total_investimento
+            st.caption(f"Somatório da composição aplicado automaticamente no campo de investimento inicial: **{money(total_investimento)}**")
+            st.dataframe(comp_calc, use_container_width=True, hide_index=True)
 
     with st.expander("Dados de Mercado", expanded=True):
         c1, c2, c3, c4 = st.columns(4)
@@ -496,6 +554,7 @@ elif step == 4:
         ["Custos/Despesas Variáveis", f"{P.premissas.custos_variaveis_percentual*100:.2f}% da receita"],
         ["Custos/Despesas Fixos", money(P.premissas.custos_fixos)],
         ["Taxa de Royalties sobre Lucro", f"{P.premissas.taxa_royalties*100:.2f}%"],
+        ["Investimento inicial", money(P.premissas.investimento_inicial)],
         ["Taxa de Crescimento (g)", f"{P.premissas.taxa_crescimento*100:.2f}%"],
         ["Ajuste otimista de receita", f"+{P.premissas.variacao_receita_otimista*100:.2f}%"],
         ["Ajuste pessimista de receita", f"-{P.premissas.variacao_receita_pessimista*100:.2f}%"],
