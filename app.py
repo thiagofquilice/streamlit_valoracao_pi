@@ -151,6 +151,9 @@ def validar_premissas(p: Premissas) -> List[str]:
     return errs
 
 
+def projetar_fluxo_caixa(p: Premissas, g: float, ajuste_receita: float = 0.0) -> pd.DataFrame:
+    receita0_ajustada = p.volume_negocios_anual * (1 + ajuste_receita)
+    linhas: List[Dict[str, float | int]] = []
 def _fluxos_fcff(p: Premissas, g: float, ajuste_receita: float = 0.0) -> List[float]:
     receita0 = p.volume_negocios_anual
     receita0_ajustada = receita0 * (1 + ajuste_receita)
@@ -160,6 +163,41 @@ def _fluxos_fcff(p: Premissas, g: float, ajuste_receita: float = 0.0) -> List[fl
         custos_variaveis_t = receita_t * p.custos_variaveis_percentual
         lucro_t = receita_t - custos_variaveis_t - p.custos_fixos
         royalties_t = p.taxa_royalties * max(lucro_t, 0.0)
+        fator_desconto_t = (1 + p.taxa_desconto) ** t
+        vp_royalties_t = royalties_t / fator_desconto_t
+        linhas.append(
+            {
+                "Ano": t,
+                "Receita": float(receita_t),
+                "Custos/Despesas Variáveis": float(custos_variaveis_t),
+                "Custos/Despesas Fixos": float(p.custos_fixos),
+                "Lucro": float(lucro_t),
+                "Royalties": float(royalties_t),
+                "Fator de desconto": float(fator_desconto_t),
+                "Royalties descontados": float(vp_royalties_t),
+            }
+        )
+    return pd.DataFrame(linhas)
+
+
+def _fluxos_fcff(p: Premissas, g: float, ajuste_receita: float = 0.0) -> List[float]:
+    projecao = projetar_fluxo_caixa(p, g, ajuste_receita)
+    return projecao["Royalties"].astype(float).tolist()
+
+
+def calcular_dcf_cenario(p: Premissas, g: float, nome: str, ajuste_receita: float = 0.0) -> ResultadoMetodo:
+    projecao = projetar_fluxo_caixa(p, g, ajuste_receita)
+    fluxos = projecao["Royalties"].astype(float).tolist()
+    valor = npv(fluxos, p.taxa_desconto)
+    return ResultadoMetodo(
+        valor=float(valor),
+        detalhes={
+            "cenario": nome,
+            "g": g,
+            "ajuste_receita": ajuste_receita,
+            "fluxos": fluxos,
+            "projecao_caixa": projecao.to_dict(orient="records"),
+        },
         fluxos.append(float(royalties_t))
     return fluxos
 
@@ -377,6 +415,11 @@ elif step == 2:
 # -----------------------------
 elif step == 3:
     st.subheader("Passo 3 — Cálculos Automáticos")
+    st.caption(
+        "Como o FDC/DCF é calculado: projetamos a receita por ano, deduzimos custos/despesas variáveis e fixos, "
+        "calculamos o lucro, aplicamos a taxa de royalties sobre esse lucro (piso em zero) e descontamos cada fluxo "
+        "pela taxa de desconto informada."
+    )
 
     # Validar novamente (defensivo)
     erros = validar_premissas(P.premissas)
@@ -413,6 +456,17 @@ elif step == 3:
                 st.metric("Média", money(float(np.nanmean(vals))))
 
         st.bar_chart(df_comp.set_index("Método"))
+
+        st.markdown("#### Projeção do fluxo de caixa (royalties)")
+        tabs = st.tabs(["Provável", "Otimista", "Pessimista"])
+        for tab, res in zip(tabs, [P.resultados.dcf_prob, P.resultados.dcf_otim, P.resultados.dcf_pess]):
+            with tab:
+                proj = pd.DataFrame(res.detalhes.get("projecao_caixa", []))
+                if not proj.empty:
+                    st.dataframe(proj, use_container_width=True)
+                    st.line_chart(proj.set_index("Ano")[["Royalties", "Royalties descontados"]])
+                else:
+                    st.info("Sem projeção disponível para este cenário.")
 
         csv = df_comp.to_csv(index=False).encode("utf-8")
         st.download_button("⬇️ Exportar resultados (.csv)", data=csv, file_name="resultados_valoracao.csv", mime="text/csv")
@@ -470,6 +524,14 @@ elif step == 4:
     df_comp = pd.DataFrame({"Método": list(valores.keys()), "Valor": list(valores.values())})
     st.dataframe(df_comp, use_container_width=True)
 
+    with st.expander("Ver projeção do fluxo de caixa por cenário", expanded=False):
+        tabs_rel = st.tabs(["Provável", "Otimista", "Pessimista"])
+        for tab, res in zip(tabs_rel, [P.resultados.dcf_prob, P.resultados.dcf_otim, P.resultados.dcf_pess]):
+            with tab:
+                proj = pd.DataFrame(res.detalhes.get("projecao_caixa", []))
+                if not proj.empty:
+                    st.dataframe(proj, use_container_width=True)
+
     # Exportações
     col1, col2, col3 = st.columns(3)
     col1.download_button("⬇️ Exportar projeto (.json)", data=P.to_json(), file_name=f"{P.premissas.nome_projeto.replace(' ', '_')}.patval.json", mime="application/json")
@@ -491,6 +553,9 @@ elif step == 4:
             ]:
                 if res and res.detalhes.get("fluxos"):
                     pd.DataFrame({"Ano": list(range(1, len(res.detalhes["fluxos"]) + 1)), "Fluxo": res.detalhes["fluxos"]}).to_excel(writer, sheet_name=label, index=False)
+                proj = pd.DataFrame(res.detalhes.get("projecao_caixa", [])) if res else pd.DataFrame()
+                if not proj.empty:
+                    proj.to_excel(writer, sheet_name=f"{label}_Detalhe"[:31], index=False)
             # Premissas
             prem_export = pd.DataFrame(list(asdict(P.premissas).items()), columns=["Chave", "Valor"])
             prem_export.to_excel(writer, sheet_name="Premissas", index=False)
