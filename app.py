@@ -159,8 +159,10 @@ def projetar_fluxo_caixa(p: Premissas, g: float, ajuste_receita: float = 0.0) ->
         custos_variaveis_t = receita_t * p.custos_variaveis_percentual
         lucro_t = receita_t - custos_variaveis_t - p.custos_fixos
         royalties_t = p.taxa_royalties * max(lucro_t, 0.0)
+        fdc_t = lucro_t - royalties_t
         fator_desconto_t = (1 + p.taxa_desconto) ** t
         vp_royalties_t = royalties_t / fator_desconto_t
+        vp_fdc_t = fdc_t / fator_desconto_t
         linhas.append(
             {
                 "Ano": t,
@@ -169,8 +171,10 @@ def projetar_fluxo_caixa(p: Premissas, g: float, ajuste_receita: float = 0.0) ->
                 "Custos/Despesas Fixos": float(p.custos_fixos),
                 "Lucro": float(lucro_t),
                 "Royalties": float(royalties_t),
+                "FDC (Lucro - Royalties)": float(fdc_t),
                 "Fator de desconto": float(fator_desconto_t),
                 "Royalties descontados": float(vp_royalties_t),
+                "FDC descontado": float(vp_fdc_t),
             }
         )
     return pd.DataFrame(linhas)
@@ -178,12 +182,12 @@ def projetar_fluxo_caixa(p: Premissas, g: float, ajuste_receita: float = 0.0) ->
 
 def _fluxos_fcff(p: Premissas, g: float, ajuste_receita: float = 0.0) -> List[float]:
     projecao = projetar_fluxo_caixa(p, g, ajuste_receita)
-    return projecao["Royalties"].astype(float).tolist()
+    return projecao["FDC (Lucro - Royalties)"].astype(float).tolist()
 
 
 def calcular_dcf_cenario(p: Premissas, g: float, nome: str, ajuste_receita: float = 0.0) -> ResultadoMetodo:
     projecao = projetar_fluxo_caixa(p, g, ajuste_receita)
-    fluxos = projecao["Royalties"].astype(float).tolist()
+    fluxos = projecao["FDC (Lucro - Royalties)"].astype(float).tolist()
     valor = npv(fluxos, p.taxa_desconto)
     return ResultadoMetodo(
         valor=float(valor),
@@ -403,7 +407,8 @@ elif step == 3:
     st.subheader("Passo 3 — Cálculos Automáticos")
     st.caption(
         "Como o FDC/DCF é calculado: projetamos a receita por ano, deduzimos custos/despesas variáveis e fixos, "
-        "calculamos o lucro, aplicamos a taxa de royalties sobre esse lucro (piso em zero) e descontamos cada fluxo "
+        "calculamos o lucro, aplicamos a taxa de royalties sobre esse lucro (piso em zero), obtemos o FDC (lucro - royalties) "
+        "e descontamos esse fluxo "
         "pela taxa de desconto informada."
     )
 
@@ -443,14 +448,14 @@ elif step == 3:
 
         st.bar_chart(df_comp.set_index("Método"))
 
-        st.markdown("#### Projeção do fluxo de caixa (royalties)")
+        st.markdown("#### Projeção do fluxo de caixa (FDC = Lucro - Royalties)")
         tabs = st.tabs(["Provável", "Otimista", "Pessimista"])
         for tab, res in zip(tabs, [P.resultados.dcf_prob, P.resultados.dcf_otim, P.resultados.dcf_pess]):
             with tab:
                 proj = pd.DataFrame(res.detalhes.get("projecao_caixa", []))
                 if not proj.empty:
                     st.dataframe(proj, use_container_width=True)
-                    st.line_chart(proj.set_index("Ano")[["Royalties", "Royalties descontados"]])
+                    st.line_chart(proj.set_index("Ano")[["FDC (Lucro - Royalties)", "FDC descontado"]])
                 else:
                     st.info("Sem projeção disponível para este cenário.")
 
