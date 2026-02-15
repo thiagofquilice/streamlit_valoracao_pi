@@ -35,6 +35,14 @@ def money(x: Optional[float], precision: int = 2) -> str:
     return f"R$ {x:,.{precision}f}".replace(",", "_").replace(".", ",").replace("_", ".")
 
 
+def formatar_df_monetario(df: pd.DataFrame, colunas: List[str]) -> pd.DataFrame:
+    df_fmt = df.copy()
+    for col in colunas:
+        if col in df_fmt.columns:
+            df_fmt[col] = df_fmt[col].apply(money)
+    return df_fmt
+
+
 def npv(cash_flows: List[float], discount_rate: float) -> float:
     r = discount_rate
     return float(sum(cf / ((1 + r) ** t) for t, cf in enumerate(cash_flows, start=1)))
@@ -159,13 +167,12 @@ def projetar_fluxo_caixa(p: Premissas, g: float, ajuste_receita: float = 0.0) ->
     receita0_ajustada = p.volume_negocios_anual * (1 + ajuste_receita)
     linhas: List[Dict[str, float | int]] = []
     for t in range(1, p.horizonte_proj_anos + 1):
-        receita_t = receita0_ajustada * ((1 + g) ** t)
+        receita_t = receita0_ajustada * ((1 + g) ** (t - 1))
         custos_variaveis_t = receita_t * p.custos_variaveis_percentual
         lucro_t = receita_t - custos_variaveis_t - p.custos_fixos
         royalties_t = p.taxa_royalties * max(lucro_t, 0.0)
         fdc_t = lucro_t - royalties_t
         fator_desconto_t = (1 + p.taxa_desconto) ** t
-        vp_royalties_t = royalties_t / fator_desconto_t
         vp_fdc_t = fdc_t / fator_desconto_t
         linhas.append(
             {
@@ -177,7 +184,6 @@ def projetar_fluxo_caixa(p: Premissas, g: float, ajuste_receita: float = 0.0) ->
                 "Royalties": float(royalties_t),
                 "FDC (Lucro - Royalties)": float(fdc_t),
                 "Fator de desconto": float(fator_desconto_t),
-                "Royalties descontados": float(vp_royalties_t),
                 "FDC descontado": float(vp_fdc_t),
             }
         )
@@ -192,7 +198,8 @@ def _fluxos_fcff(p: Premissas, g: float, ajuste_receita: float = 0.0) -> List[fl
 def calcular_dcf_cenario(p: Premissas, g: float, nome: str, ajuste_receita: float = 0.0) -> ResultadoMetodo:
     projecao = projetar_fluxo_caixa(p, g, ajuste_receita)
     fluxos = projecao["FDC (Lucro - Royalties)"].astype(float).tolist()
-    valor = npv(fluxos, p.taxa_desconto)
+    valor_presente_fluxos = npv(fluxos, p.taxa_desconto)
+    valor = valor_presente_fluxos - float(p.investimento_inicial)
     return ResultadoMetodo(
         valor=float(valor),
         detalhes={
@@ -200,6 +207,9 @@ def calcular_dcf_cenario(p: Premissas, g: float, nome: str, ajuste_receita: floa
             "g": g,
             "ajuste_receita": ajuste_receita,
             "fluxos": fluxos,
+            "valor_presente_fluxos": float(valor_presente_fluxos),
+            "investimento_inicial": float(p.investimento_inicial),
+            "dcf_liquido": float(valor),
             "projecao_caixa": projecao.to_dict(orient="records"),
         },
     )
@@ -308,6 +318,9 @@ elif step == 2:
 
     if "show_comp_investimento" not in st.session_state:
         st.session_state.show_comp_investimento = False
+    if "composicao_investimento_data" not in st.session_state:
+        base = P.premissas.composicao_investimento or [{"Item": "", "Quantidade": 1.0, "Valor Unitário": 0.0, "Valor Total": 0.0}]
+        st.session_state.composicao_investimento_data = pd.DataFrame(base)
 
     with st.expander("Dados Financeiros", expanded=True):
         c1, c2, c3 = st.columns(3)
@@ -317,6 +330,7 @@ elif step == 2:
             1e12,
             P.premissas.volume_negocios_anual,
             step=10_000.0,
+            format="%.2f",
             help="Receita anual esperada no ano base da projeção.",
         )
         P.premissas.custos_variaveis_percentual = c2.number_input(
@@ -333,6 +347,7 @@ elif step == 2:
             1e12,
             P.premissas.custos_fixos,
             step=10_000.0,
+            format="%.2f",
             help="Inclua despesas que não dependem diretamente da receita, como equipe fixa, aluguel e estrutura administrativa.",
         )
 
@@ -343,6 +358,7 @@ elif step == 2:
             20.0,
             P.premissas.taxa_royalties * 100,
             step=0.25,
+            format="%.2f",
             help="Esta taxa incide sobre o lucro do período: Receita - Custos/Despesas Variáveis - Custos/Despesas Fixos.",
         ) / 100
         P.premissas.horizonte_proj_anos = int(c5.number_input(
@@ -359,23 +375,19 @@ elif step == 2:
             max_value=1e12,
             value=float(P.premissas.investimento_inicial),
             step=10_000.0,
+            format="%.2f",
             disabled=st.session_state.show_comp_investimento,
             help="Valor aplicado no início da exploração comercial da patente.",
         )
 
-        toggle_label = (
-            "🔼 Ocultar composição opcional do investimento inicial"
-            if st.session_state.show_comp_investimento
-            else "🔽 Detalhar composição opcional do investimento inicial"
+        st.session_state.show_comp_investimento = st.checkbox(
+            "Detalhar composição do investimento inicial",
+            value=st.session_state.show_comp_investimento,
+            help="Ao detalhar os itens, o investimento inicial passa a ser calculado automaticamente.",
         )
-        if st.button(toggle_label, key="toggle_comp_investimento"):
-            st.session_state.show_comp_investimento = not st.session_state.show_comp_investimento
 
         if st.session_state.show_comp_investimento:
-            composicao_base = P.premissas.composicao_investimento or [
-                {"Item": "", "Quantidade": 1.0, "Valor Unitário": 0.0, "Valor Total": 0.0}
-            ]
-            comp_df = pd.DataFrame(composicao_base)
+            comp_df = st.session_state.composicao_investimento_data.copy()
             for col in ["Item", "Quantidade", "Valor Unitário", "Valor Total"]:
                 if col not in comp_df.columns:
                     comp_df[col] = "" if col == "Item" else 0.0
@@ -386,11 +398,12 @@ elif step == 2:
                 key="composicao_investimento_editor",
                 num_rows="dynamic",
                 use_container_width=True,
+                hide_index=True,
                 column_config={
                     "Item": st.column_config.TextColumn("Item"),
-                    "Quantidade": st.column_config.NumberColumn("Quantidade", min_value=0.0, step=1.0),
-                    "Valor Unitário": st.column_config.NumberColumn("Valor Unitário", min_value=0.0, step=100.0, format="R$ %.2f"),
-                    "Valor Total": st.column_config.NumberColumn("Valor Total", disabled=True, format="R$ %.2f"),
+                    "Quantidade": st.column_config.NumberColumn("Quantidade", min_value=0.0, step=1.0, format="%.2f"),
+                    "Valor Unitário": st.column_config.NumberColumn("Valor Unitário", min_value=0.0, step=100.0, format="%.2f"),
+                    "Valor Total": st.column_config.NumberColumn("Valor Total", disabled=True, format="%.2f"),
                 },
             )
 
@@ -398,11 +411,12 @@ elif step == 2:
             comp_calc["Quantidade"] = pd.to_numeric(comp_calc["Quantidade"], errors="coerce").fillna(0.0)
             comp_calc["Valor Unitário"] = pd.to_numeric(comp_calc["Valor Unitário"], errors="coerce").fillna(0.0)
             comp_calc["Valor Total"] = comp_calc["Quantidade"] * comp_calc["Valor Unitário"]
+
+            st.session_state.composicao_investimento_data = comp_calc
             total_investimento = float(comp_calc["Valor Total"].sum())
             P.premissas.composicao_investimento = comp_calc.to_dict(orient="records")
             P.premissas.investimento_inicial = total_investimento
             st.caption(f"Somatório da composição aplicado automaticamente no campo de investimento inicial: **{money(total_investimento)}**")
-            st.dataframe(comp_calc, use_container_width=True, hide_index=True)
 
     with st.expander("Dados de Mercado", expanded=True):
         c1, c2, c3, c4 = st.columns(4)
@@ -412,6 +426,7 @@ elif step == 2:
             100.0,
             P.premissas.taxa_crescimento * 100,
             step=0.5,
+            format="%.2f",
             help="Crescimento orgânico anual da receita no cenário provável.",
         ) / 100
         P.premissas.variacao_receita_otimista = c2.number_input(
@@ -420,6 +435,7 @@ elif step == 2:
             300.0,
             P.premissas.variacao_receita_otimista * 100,
             step=1.0,
+            format="%.2f",
             help="Percentual adicional sobre a receita projetada para construir o cenário otimista.",
         ) / 100
         P.premissas.variacao_receita_pessimista = c3.number_input(
@@ -428,6 +444,7 @@ elif step == 2:
             100.0,
             P.premissas.variacao_receita_pessimista * 100,
             step=1.0,
+            format="%.2f",
             help="Percentual de redução sobre a receita projetada para construir o cenário pessimista.",
         ) / 100
         P.premissas.taxa_desconto = c4.number_input(
@@ -436,16 +453,17 @@ elif step == 2:
             100.0,
             P.premissas.taxa_desconto * 100,
             step=0.5,
+            format="%.2f",
             help="Taxa usada para trazer os fluxos de royalties a valor presente.",
         ) / 100
 
     with st.expander("Custos de Desenvolvimento (Abordagem de Custos)", expanded=True):
         c1, c2, c3, c4, c5 = st.columns(5)
-        P.premissas.custos_pd = c1.number_input("P&D (R$)", 0.0, 1e12, P.premissas.custos_pd, step=10_000.0)
-        P.premissas.custos_formulacao = c2.number_input("Formulação (R$)", 0.0, 1e12, P.premissas.custos_formulacao, step=5_000.0)
-        P.premissas.custos_testes = c3.number_input("Testes (R$)", 0.0, 1e12, P.premissas.custos_testes, step=5_000.0)
-        P.premissas.custos_prototipo = c4.number_input("Protótipo (R$)", 0.0, 1e12, P.premissas.custos_prototipo, step=5_000.0)
-        P.premissas.custos_validacao = c5.number_input("Validação (R$)", 0.0, 1e12, P.premissas.custos_validacao, step=5_000.0)
+        P.premissas.custos_pd = c1.number_input("P&D (R$)", 0.0, 1e12, P.premissas.custos_pd, step=10_000.0, format="%.2f")
+        P.premissas.custos_formulacao = c2.number_input("Formulação (R$)", 0.0, 1e12, P.premissas.custos_formulacao, step=5_000.0, format="%.2f")
+        P.premissas.custos_testes = c3.number_input("Testes (R$)", 0.0, 1e12, P.premissas.custos_testes, step=5_000.0, format="%.2f")
+        P.premissas.custos_prototipo = c4.number_input("Protótipo (R$)", 0.0, 1e12, P.premissas.custos_prototipo, step=5_000.0, format="%.2f")
+        P.premissas.custos_validacao = c5.number_input("Validação (R$)", 0.0, 1e12, P.premissas.custos_validacao, step=5_000.0, format="%.2f")
 
     col1, col2 = st.columns([1,1])
     if col1.button("⬅️ Voltar para Textos"):
@@ -467,7 +485,7 @@ elif step == 3:
         "Como o FDC/DCF é calculado: projetamos a receita por ano, deduzimos custos/despesas variáveis e fixos, "
         "calculamos o lucro, aplicamos a taxa de royalties sobre esse lucro (piso em zero), obtemos o FDC (lucro - royalties) "
         "e descontamos esse fluxo "
-        "pela taxa de desconto informada."
+        "pela taxa de desconto informada. Em seguida, subtraímos o investimento inicial para obter o DCF líquido."
     )
 
     # Validar novamente (defensivo)
@@ -493,10 +511,11 @@ elif step == 3:
             "Custos (soma)": P.resultados.custos.valor,
         }
         df_comp = pd.DataFrame({"Método": list(valores.keys()), "Valor": list(valores.values())})
+        df_comp_fmt = formatar_df_monetario(df_comp, ["Valor"])
 
         colA, colB = st.columns([2,1])
         with colA:
-            st.dataframe(df_comp, use_container_width=True)
+            st.dataframe(df_comp_fmt, use_container_width=True, hide_index=True)
         with colB:
             if not df_comp["Valor"].isna().all():
                 # Ensure values are a numpy ndarray of float for type-checkers and numpy functions
@@ -512,7 +531,13 @@ elif step == 3:
             with tab:
                 proj = pd.DataFrame(res.detalhes.get("projecao_caixa", []))
                 if not proj.empty:
-                    st.dataframe(proj, use_container_width=True)
+                    proj_fmt = formatar_df_monetario(
+                        proj,
+                        ["Receita", "Custos/Despesas Variáveis", "Custos/Despesas Fixos", "Lucro", "Royalties", "FDC (Lucro - Royalties)", "FDC descontado"],
+                    )
+                    if "Fator de desconto" in proj_fmt.columns:
+                        proj_fmt["Fator de desconto"] = proj_fmt["Fator de desconto"].map(lambda v: f"{v:.4f}")
+                    st.dataframe(proj_fmt, use_container_width=True, hide_index=True)
                     st.line_chart(proj.set_index("Ano")[["FDC (Lucro - Royalties)", "FDC descontado"]])
                 else:
                     st.info("Sem projeção disponível para este cenário.")
@@ -572,7 +597,7 @@ elif step == 4:
         "Custos (soma)": P.resultados.custos.valor,
     }
     df_comp = pd.DataFrame({"Método": list(valores.keys()), "Valor": list(valores.values())})
-    st.dataframe(df_comp, use_container_width=True)
+    st.dataframe(formatar_df_monetario(df_comp, ["Valor"]), use_container_width=True, hide_index=True)
 
     with st.expander("Ver projeção do fluxo de caixa por cenário", expanded=False):
         tabs_rel = st.tabs(["Provável", "Otimista", "Pessimista"])
@@ -580,7 +605,13 @@ elif step == 4:
             with tab:
                 proj = pd.DataFrame(res.detalhes.get("projecao_caixa", []))
                 if not proj.empty:
-                    st.dataframe(proj, use_container_width=True)
+                    proj_fmt = formatar_df_monetario(
+                        proj,
+                        ["Receita", "Custos/Despesas Variáveis", "Custos/Despesas Fixos", "Lucro", "Royalties", "FDC (Lucro - Royalties)", "FDC descontado"],
+                    )
+                    if "Fator de desconto" in proj_fmt.columns:
+                        proj_fmt["Fator de desconto"] = proj_fmt["Fator de desconto"].map(lambda v: f"{v:.4f}")
+                    st.dataframe(proj_fmt, use_container_width=True, hide_index=True)
 
     # Exportações
     col1, col2, col3 = st.columns(3)
