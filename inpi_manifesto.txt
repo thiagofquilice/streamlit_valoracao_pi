@@ -1,0 +1,19 @@
+Arquivo compactado: inpi_deposito_streamlit.zip
+Algoritmo de hash: SHA-256
+Hash (hex): 71be6257de32b46dc6668b23f8f990cc906f76d0cf3ed0dbc289fffbac61f2c0
+Data/hora UTC: 2026-02-20T00:00:47Z
+Commit Git (HEAD): 2534c22bf98988f9894ba9ce54b81916b1d45cff
+
+Resumo do conteúdo incluído:
+- app.py
+- 1_how_to_run
+- .devcontainer/devcontainer.json
+- inpi_commit.txt
+
+Resumo do conteúdo excluído:
+- Metadados e automações de repositório: .git/, .github/
+- Ambientes virtuais: .venv/, venv/
+- Cache e compilados: __pycache__/, .pytest_cache/, .mypy_cache/, *.pyc
+- Segredos e variáveis de ambiente: .streamlit/secrets.toml, .env
+- Saídas e logs: logs/, outputs/, *.log
+- Arquivos de dados e artefatos potencialmente grandes: *.parquet, *.feather, *.h5, *.hdf5, *.pkl, *.joblib, *.sqlite, *.db, *.csv, *.tsv, *.xlsx, *.zip, *.tar, *.tar.gz
